@@ -1,0 +1,10 @@
+.idea
+
+.DS_Store
+
+venv
+crown/valcode.png
+crown/cookies.json
+*.iml
+
+store
