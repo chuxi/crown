@@ -3,8 +3,13 @@
 .DS_Store
 
 venv
-crown/valcode.png
-crown/cookies.json
+valcode.png
+cookies.json
 *.iml
 
 store
+
+build
+dist
+*.egg-info
+__pycache__
