@@ -90,7 +90,7 @@ def get_cookies():
 
     # save the cookies
     new_cookies = requests.utils.dict_from_cookiejar(login_code_resp.cookies)
-    for (k, v) in requests.utils.dict_from_cookiejar(login_code_resp.cookies).items():
+    for (k, v) in requests.utils.dict_from_cookiejar(login_check_resp.cookies).items():
         new_cookies[k] = v
     new_cookies['wee_username'] = 'Y3Jvd24wMTYyMQ%3D%3D'
     new_cookies['wee_password'] = 'MTY4NTEuNWNyb3du'
@@ -159,7 +159,7 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
     # print(json.dumps(json.loads(search_company_resp.text), indent=4))
 
     # fetch each page and store to csv file
-    company_info = json.loads(search_company_resp.text, encoding='utf-8')
+    company_info = json.loads(search_company_resp.text, encoding=search_company_resp.encoding)
     company_record_total_count = int(company_info['resultPagination']['totalCount'])
 
     count = 0
@@ -170,7 +170,7 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
     if os.path.exists(filename):
         os.remove(filename)
 
-    with open(filename, 'w') as f:
+    with open(filename, 'w', newline='', encoding='utf-8') as f:
         csv_f = csv.DictWriter(f, field_names)
         csv_f.writeheader()
         while count < company_record_total_count:
@@ -182,7 +182,7 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
                                     cookies=cookies)
             page_result = json.loads(search_page_records_resp.text, encoding='utf-8')
             rows = list(value['fieldMap'] for value in page_result['searchResultDTO']['searchResultRecord'])
-            print("get rows: %s" % len(rows))
+            # print("get rows: %s" % len(rows))
             save_as_csv(rows, csv_f)
             print("current count: %s" % count)
             count = count + 12
@@ -217,3 +217,6 @@ def crown():
         for line in lines:
             search_company_info(line, cookies, apply_date=args.date, store=args.store)
 
+
+if __name__ == '__main__':
+    crown()
