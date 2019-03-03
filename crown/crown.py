@@ -193,11 +193,10 @@ def search_company_info_sem(sem, company, cookies, apply_date, store):
     try:
         sem.acquire()
         search_company_info(company, cookies, apply_date, store)
-    except:
-        print("failed to search company: %s" % company)
+    except Exception as e:
+        print("failed to search company: %s, %s" % (company, e))
     finally:
         sem.release()
-    pass
 
 
 def crown():
