@@ -10,6 +10,7 @@ import requests
 import re
 import json
 import csv
+import threading
 
 login_url = 'http://www.pss-system.gov.cn/sipopublicsearch/portal/uilogin-forwardLogin.shtml'
 login_code_url = 'http://www.pss-system.gov.cn/sipopublicsearch/portal/login-showPic.shtml'
@@ -52,12 +53,12 @@ csv_header_dict = dict(csv_header)
 
 
 def save_cookies(cookies_jar):
-    with open(cookies_file, 'w') as f:
+    with open(cookies_file, 'w', encoding='utf-8') as f:
         json.dump(cookies_jar, f)
 
 
 def load_cookies():
-    with open(cookies_file, 'r') as f:
+    with open(cookies_file, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
@@ -71,7 +72,7 @@ def get_cookies():
     if requests.utils.dict_from_cookiejar(login_code_resp.cookies)['IS_LOGIN'] == 'true':
         return file_cookies
 
-    with open("valcode.png", 'wb') as f:
+    with open("valcode.png", 'wb', encoding='utf-8') as f:
         f.write(login_code_resp.content)
     code = input('请输入验证码: ')
 
@@ -184,8 +185,19 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
             rows = list(value['fieldMap'] for value in page_result['searchResultDTO']['searchResultRecord'])
             # print("get rows: %s" % len(rows))
             save_as_csv(rows, csv_f)
-            print("current count: %s" % count)
-            count = count + 12
+            count = count + len(rows)
+            print("%s current count: %s" % (company, count))
+
+
+def search_company_info_sem(sem, company, cookies, apply_date, store):
+    try:
+        sem.acquire()
+        search_company_info(company, cookies, apply_date, store)
+    except:
+        print("failed to search company: %s" % company)
+    finally:
+        sem.release()
+    pass
 
 
 def crown():
@@ -212,10 +224,13 @@ def crown():
         # only download the example company
         search_company_info(args.company, cookies, apply_date=args.date, store=args.store)
     else:
-        with open(args.file) as f:
-            lines = [ x.strip() for x in f.readlines()]
+        with open(args.file, 'r', encoding='utf-8') as f:
+            lines = [x.strip() for x in f.readlines()]
+        pool_sema = threading.Semaphore(value=5)
+
         for line in lines:
-            search_company_info(line, cookies, apply_date=args.date, store=args.store)
+            threading.Thread(target=search_company_info_sem,
+                             args=(pool_sema, line, cookies, args.date, args.store)).start()
 
 
 if __name__ == '__main__':
