@@ -11,6 +11,7 @@ import re
 import json
 import csv
 import threading
+import time
 
 login_url = 'http://www.pss-system.gov.cn/sipopublicsearch/portal/uilogin-forwardLogin.shtml'
 login_code_url = 'http://www.pss-system.gov.cn/sipopublicsearch/portal/login-showPic.shtml'
@@ -32,17 +33,19 @@ request_header = {
 abview_pattern = r"(?<=num=\"0001\">).+?(?=</base:Paragraphs>)"
 
 csv_header = [('ID', 'ID'),
-              ('VID', '申请号'),
-              ('PN', '公开号'),
+              ('AP', '申请号'),
               ('APD', '申请日'),
+              ('PN', '公开号'),
               ('PD', '公开（公告）日'),
-              ('IC', 'IPC分类号'),
+              ('ICST', 'IPC分类号'),
               ('CPC', 'CPC分类号'),
-              ('FNUM', '引证'),
+              ('PR', '优先权号'),
+              ('PRD', '优先权日'),
+              ('FNUM', '同族'),
               ('PNUM', '引证'),
               ('CPNUM', '被引'),
               ('TIVIEW', '名称'),
-              ('ABVIEW', '简介'),
+              ('ABVIEW', '摘要'),
               ('INVIEW', '发明人'),
               ('PAVIEW', '申请（专利权）人'),
               ('AA', '申请人地址'),
@@ -72,7 +75,7 @@ def get_cookies():
     if requests.utils.dict_from_cookiejar(login_code_resp.cookies)['IS_LOGIN'] == 'true':
         return file_cookies
 
-    with open("valcode.png", 'wb', encoding='utf-8') as f:
+    with open("valcode.png", 'wb') as f:
         f.write(login_code_resp.content)
     code = input('请输入验证码: ')
 
@@ -117,12 +120,14 @@ def extract_paview(paview):
 def save_as_csv(rows, f):
     for row in rows:
         result = {csv_header_dict['ID']: row.get('ID'),
-                  csv_header_dict['VID']: row.get('VID'),
-                  csv_header_dict['PN']: row.get('PN'),
+                  csv_header_dict['AP']: row.get('AP'),
                   csv_header_dict['APD']: row.get('APD'),
+                  csv_header_dict['PN']: row.get('PN'),
                   csv_header_dict['PD']: row.get('PD'),
-                  csv_header_dict['IC']: row.get('IC'),
+                  csv_header_dict['ICST']: row.get('ICST'),
                   csv_header_dict['CPC']: row.get('CPC'),
+                  csv_header_dict['PR']: row.get('PR'),
+                  csv_header_dict['PRD']: row.get('PRD'),
                   csv_header_dict['FNUM']: row.get('FNUM'),
                   csv_header_dict['PNUM']: row.get('PNUM'),
                   csv_header_dict['CPNUM']: row.get('CPNUM'),
@@ -164,10 +169,16 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
     company_record_total_count = int(company_info['resultPagination']['totalCount'])
 
     count = 0
-    data['resultPagination.limit'] = 12
+    # 12 records one dozen
+    data['resultPagination.limit'] = '12'
+    data['resultPagination.sumLimit'] = '12'
 
     # check file exits and delete it
     filename = store + '/' + company + '.csv'
+    filename_done = store + '/' + company + '-done.csv'
+    if os.path.exists(filename_done):
+        return
+
     if os.path.exists(filename):
         os.remove(filename)
 
@@ -176,7 +187,7 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
         csv_f.writeheader()
         while count < company_record_total_count:
             # fetch the record and save to csv
-            data['resultPagination.start'] = count
+            data['resultPagination.start'] = str(count)
             search_page_records_resp = requests.post(search_page_url,
                                     data=data,
                                     headers=search_header,
@@ -185,8 +196,13 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
             rows = list(value['fieldMap'] for value in page_result['searchResultDTO']['searchResultRecord'])
             # print("get rows: %s" % len(rows))
             save_as_csv(rows, csv_f)
-            count = count + len(rows)
+            count = count + 12
             print("%s current count: %s" % (company, count))
+            if count % 1200 == 0:
+                time.sleep(60)
+    print("complete downloading company: %s" % company)
+    # rename the file
+    os.rename(filename, filename_done)
 
 
 def search_company_info_sem(sem, company, cookies, apply_date, store):
@@ -225,7 +241,7 @@ def crown():
     else:
         with open(args.file, 'r', encoding='utf-8') as f:
             lines = [x.strip() for x in f.readlines()]
-        pool_sema = threading.Semaphore(value=5)
+        pool_sema = threading.Semaphore(value=1)
 
         for line in lines:
             threading.Thread(target=search_company_info_sem,
