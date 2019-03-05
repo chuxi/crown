@@ -18,6 +18,7 @@ login_code_url = 'http://www.pss-system.gov.cn/sipopublicsearch/portal/login-sho
 login_check_url = 'http://www.pss-system.gov.cn/sipopublicsearch/wee/platform/wee_security_check'
 cookies_file = "cookies.json"
 
+search_page_is_used_url = 'http://www.pss-system.gov.cn/sipopublicsearch/patentsearch/pageIsUesd-pageUsed.shtml'
 search_url = 'http://www.pss-system.gov.cn/sipopublicsearch/patentsearch/executeTableSearch0529-executeCommandSearch.shtml'
 search_page_url = 'http://www.pss-system.gov.cn/sipopublicsearch/patentsearch/showSearchResult-startWa.shtml'
 
@@ -111,7 +112,7 @@ def extract_abview(abview):
     return None
 
 
-def extract_paview(paview):
+def remove_font(paview):
     if paview is not None:
         return paview.replace('<FONT>', '').replace('</FONT>', '')
     return None
@@ -121,9 +122,9 @@ def save_as_csv(rows, f):
     for row in rows:
         result = {csv_header_dict['ID']: row.get('ID'),
                   csv_header_dict['AP']: row.get('AP'),
-                  csv_header_dict['APD']: row.get('APD'),
+                  csv_header_dict['APD']: remove_font(row.get('APD')),
                   csv_header_dict['PN']: row.get('PN'),
-                  csv_header_dict['PD']: row.get('PD'),
+                  csv_header_dict['PD']: remove_font(row.get('PD')),
                   csv_header_dict['ICST']: row.get('ICST'),
                   csv_header_dict['CPC']: row.get('CPC'),
                   csv_header_dict['PR']: row.get('PR'),
@@ -134,7 +135,7 @@ def save_as_csv(rows, f):
                   csv_header_dict['ABVIEW']: extract_abview(row.get('ABVIEW')),
                   csv_header_dict['TIVIEW']: row.get('TIVIEW'),
                   csv_header_dict['INVIEW']: row.get('INVIEW'),
-                  csv_header_dict['PAVIEW']: extract_paview(row.get('PAVIEW')),
+                  csv_header_dict['PAVIEW']: remove_font(row.get('PAVIEW')),
                   csv_header_dict['AA']: row.get('AA'),
                   }
         f.writerow(result)
@@ -143,6 +144,42 @@ def save_as_csv(rows, f):
 # search the company pss info
 def search_company_info(company, cookies, apply_date='20100101:20181231', store='store'):
     print("crawling company: %s" % company)
+
+    # check file exits and delete it
+    filename = store + '/' + company + '.csv'
+    filename_done = store + '/' + company + '-done.csv'
+    if os.path.exists(filename_done):
+        return
+
+    should_write_header = True
+    last_apd = None
+    if os.path.exists(filename):
+        # get the last date of the csv file, start from there
+        # we need to delete the last day's csv records,
+        # to avoid duplication
+        should_write_header = False
+        with open(filename, 'r', newline='', encoding='utf-8') as f:
+            lines = f.readlines()
+            # the third position has APD value
+            last_apd = lines[-1].split(",")[2]
+            index = -2
+            while index >= -len(lines):
+                if lines[index].split(",")[2] == last_apd:
+                    index = index - 1
+                else:
+                    break
+            index = index + 1
+            lines = lines[:index]
+        with open(filename, 'w', newline='', encoding='utf-8') as f:
+            for line in lines:
+                f.write(line)
+
+    # update apply_date with last_apd
+    if last_apd is not None:
+        start_date = apply_date.split(":")[0]
+        stop_date = last_apd.replace(".", "")
+        apply_date = start_date + ":" + stop_date
+
     data = {
         'searchCondition.searchExp': '申请日=%s AND 申请（专利权）人=(%s)' %
                                      (apply_date, company),
@@ -157,6 +194,9 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
     search_header = request_header.copy()
     search_header['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8'
     search_header['Accept'] = 'application/json, text/javascript, */*; q=0.01'
+
+    # maybe it is the request to avoid blocked
+    requests.post(search_page_is_used_url, headers=search_header, cookies=cookies)
 
     search_company_resp = requests.post(search_page_url,
                                         data=data,
@@ -173,18 +213,10 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
     data['resultPagination.limit'] = '12'
     data['resultPagination.sumLimit'] = '12'
 
-    # check file exits and delete it
-    filename = store + '/' + company + '.csv'
-    filename_done = store + '/' + company + '-done.csv'
-    if os.path.exists(filename_done):
-        return
-
-    if os.path.exists(filename):
-        os.remove(filename)
-
-    with open(filename, 'w', newline='', encoding='utf-8') as f:
+    with open(filename, 'a+', newline='', encoding='utf-8') as f:
         csv_f = csv.DictWriter(f, field_names)
-        csv_f.writeheader()
+        if should_write_header:
+            csv_f.writeheader()
         while count < company_record_total_count:
             # fetch the record and save to csv
             data['resultPagination.start'] = str(count)
@@ -198,7 +230,8 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
             save_as_csv(rows, csv_f)
             count = count + 12
             print("%s current count: %s" % (company, count))
-            if count % 1200 == 0:
+            if count % 900 == 0:
+                requests.post(search_page_is_used_url, headers=search_header, cookies=cookies)
                 time.sleep(60)
     print("complete downloading company: %s" % company)
     # rename the file
