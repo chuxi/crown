@@ -12,6 +12,7 @@ import json
 import csv
 import threading
 import time
+import sys
 
 login_url = 'http://www.pss-system.gov.cn/sipopublicsearch/portal/uilogin-forwardLogin.shtml'
 login_code_url = 'http://www.pss-system.gov.cn/sipopublicsearch/portal/login-showPic.shtml'
@@ -84,8 +85,8 @@ def get_cookies():
         'j_loginsuccess_url': '',
         'j_validation_code': str(code),
         'wee_remember_me': 'on',
-        'j_username': 'Y3Jvd24wMTYyMQ==',
-        'j_password': 'MTY4NTEuNWNyb3du'
+        'j_username': 'em9lMDE2MjE=',
+        'j_password': 'dGlhbnNoaWxlaTAxNjIx'
     }
 
     login_check_resp = requests.post(login_check_url,
@@ -221,25 +222,32 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
             # fetch the record and save to csv
             data['resultPagination.start'] = str(count)
 
+            total_time = 0
             while True:
                 search_page_records_resp = requests.post(search_page_url,
                                         data=data,
                                         headers=search_header,
                                         cookies=cookies)
-                if search_page_records_resp.status_code == 200:
+                try:
+                    page_result = json.loads(search_page_records_resp.text, encoding='utf-8')
+                    total_time = 0
                     break
-                else:
+                except Exception as e:
                     print("failed to get records, wait 30 seconds...")
                     time.sleep(30)
-            page_result = json.loads(search_page_records_resp.text, encoding='utf-8')
+                    total_time = total_time + 30
+                    if total_time > 3600:
+                        print("waited 1 hour and failed to download, please check ")
+                        sys.exit(-1)
+
             rows = list(value['fieldMap'] for value in page_result['searchResultDTO']['searchResultRecord'])
             # print("get rows: %s" % len(rows))
             save_as_csv(rows, csv_f)
             count = count + 12
             print("%s current count: %s" % (company, count))
-            # if count % 300 == 0:
-            requests.post(search_page_is_used_url, headers=search_header, cookies=cookies)
-                # time.sleep(60)
+            if count % 300 == 0:
+                requests.post(search_page_is_used_url, headers=search_header, cookies=cookies)
+                time.sleep(120)
     print("complete downloading company: %s" % company)
     # rename the file
     os.rename(filename, filename_done)
@@ -281,11 +289,15 @@ def crown():
     else:
         with open(args.file, 'r', encoding='utf-8') as f:
             lines = [x.strip() for x in f.readlines()]
-        pool_sema = threading.Semaphore(value=1)
+        # pool_sema = threading.Semaphore(value=1)
 
         for line in lines:
-            threading.Thread(target=search_company_info_sem,
-                             args=(pool_sema, line, cookies, args.date, args.store)).start()
+            try:
+                search_company_info(line, cookies, args.date, args.store)
+            except:
+                time.sleep(120)
+            # threading.Thread(target=search_company_info_sem,
+            #                  args=(pool_sema, line, cookies, args.date, args.store)).start()
 
 
 if __name__ == '__main__':
