@@ -220,19 +220,26 @@ def search_company_info(company, cookies, apply_date='20100101:20181231', store=
         while count < company_record_total_count:
             # fetch the record and save to csv
             data['resultPagination.start'] = str(count)
-            search_page_records_resp = requests.post(search_page_url,
-                                    data=data,
-                                    headers=search_header,
-                                    cookies=cookies)
+
+            while True:
+                search_page_records_resp = requests.post(search_page_url,
+                                        data=data,
+                                        headers=search_header,
+                                        cookies=cookies)
+                if search_page_records_resp.status_code == 200:
+                    break
+                else:
+                    print("failed to get records, wait 30 seconds...")
+                    time.sleep(30)
             page_result = json.loads(search_page_records_resp.text, encoding='utf-8')
             rows = list(value['fieldMap'] for value in page_result['searchResultDTO']['searchResultRecord'])
             # print("get rows: %s" % len(rows))
             save_as_csv(rows, csv_f)
             count = count + 12
             print("%s current count: %s" % (company, count))
-            if count % 900 == 0:
-                requests.post(search_page_is_used_url, headers=search_header, cookies=cookies)
-                time.sleep(60)
+            # if count % 300 == 0:
+            requests.post(search_page_is_used_url, headers=search_header, cookies=cookies)
+                # time.sleep(60)
     print("complete downloading company: %s" % company)
     # rename the file
     os.rename(filename, filename_done)
